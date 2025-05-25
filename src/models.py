@@ -16,18 +16,32 @@ from sklearn.compose import ColumnTransformer
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Optional imports for deep learning
+# Optional imports for deep learning (only if available)
 try:
     from transformers import AutoTokenizer, AutoModel, pipeline
     import torch
     DEEP_LEARNING_AVAILABLE = True
 except ImportError:
     DEEP_LEARNING_AVAILABLE = False
-    # Create dummy classes
-    AutoTokenizer = None
-    AutoModel = None
-    pipeline = None
-    torch = None
+    # Create dummy torch module to prevent errors
+    class DummyTorch:
+        def device(self, *args, **kwargs):
+            return "cpu"
+        def no_grad(self):
+            return self
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def is_available(self):
+            return False
+        @property
+        def cuda(self):
+            return self
+        def __getattr__(self, name):
+            # Return a dummy function for any other torch attributes
+            return lambda *args, **kwargs: None
+    torch = DummyTorch() if not DEEP_LEARNING_AVAILABLE else torch
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -315,12 +329,12 @@ class TraditionalModels:
 
 class DeepLearningModels:
     """
-    Deep learning models using transformers
+    Deep learning models using transformers (optional)
     """
     
     def __init__(self):
         if not DEEP_LEARNING_AVAILABLE:
-            print("Warning: Transformers not available. Deep learning features disabled.")
+            print("Warning: PyTorch/Transformers not available. Deep learning features disabled.")
             self.tokenizer = None
             self.model = None
             self.device = "cpu"
@@ -334,7 +348,7 @@ class DeepLearningModels:
         """Load Turkish BERT model"""
         
         if not DEEP_LEARNING_AVAILABLE:
-            print("Error: Transformers not available. Cannot load BERT model.")
+            print("Error: PyTorch/Transformers not available. Cannot load BERT model.")
             return
             
         print(f"Loading {model_name}...")
@@ -346,7 +360,7 @@ class DeepLearningModels:
         """Create BERT embeddings for texts"""
         
         if not DEEP_LEARNING_AVAILABLE:
-            print("Error: Transformers not available. Cannot create embeddings.")
+            print("Error: PyTorch/Transformers not available. Cannot create embeddings.")
             return np.array([])
         
         if self.tokenizer is None or self.model is None:
@@ -382,7 +396,7 @@ class DeepLearningModels:
         """Create embeddings for entire recipes"""
         
         if not DEEP_LEARNING_AVAILABLE:
-            print("Error: Transformers not available. Cannot create recipe embeddings.")
+            print("Error: PyTorch/Transformers not available. Cannot create recipe embeddings.")
             return np.array([])
         
         # Combine title and ingredients

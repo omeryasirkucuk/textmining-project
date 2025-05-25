@@ -10,6 +10,32 @@ from streamlit_option_menu import option_menu
 import os
 import re
 
+# Simple NLTK setup with error handling
+try:
+    import nltk
+    NLTK_AVAILABLE = True
+    # Try to download required data quietly
+    try:
+        nltk.data.find('corpora/stopwords')
+    except LookupError:
+        try:
+            nltk.download('stopwords', quiet=True)
+        except:
+            pass  # Continue without NLTK if download fails
+except ImportError:
+    NLTK_AVAILABLE = False
+    # Create dummy nltk module
+    class DummyNLTK:
+        def word_tokenize(self, text):
+            return text.split()
+        def download(self, *args, **kwargs):
+            pass
+        class data:
+            @staticmethod
+            def find(*args):
+                raise LookupError("NLTK not available")
+    nltk = DummyNLTK()
+
 # Import our custom modules
 import sys
 sys.path.append('src')
@@ -157,11 +183,11 @@ class RecipeClassifierApp:
                 traceback.print_exc()
     
     def load_sample_data(self):
-        """Load all recipes for analysis"""
+        """Load sample recipes for analysis (optimized for cloud deployment)"""
         try:
             # Try to use Streamlit spinner if available
             try:
-                with st.spinner('Loading full dataset...'):
+                with st.spinner('Loading dataset...'):
                     with open('data/detailed_recipe_categorie_unitsize_calorie_chef.json', 'r', encoding='utf-8') as f:
                         all_recipes = json.load(f)
             except:
@@ -169,8 +195,14 @@ class RecipeClassifierApp:
                 with open('data/detailed_recipe_categorie_unitsize_calorie_chef.json', 'r', encoding='utf-8') as f:
                     all_recipes = json.load(f)
             
-            # Load all recipes
-            self.sample_recipes = all_recipes
+            # Significantly reduce dataset size for cloud deployment
+            import random
+            if len(all_recipes) > 500:  # Reduced from 1000 to 500
+                random.seed(42)  # For reproducibility
+                self.sample_recipes = random.sample(all_recipes, 500)
+            else:
+                self.sample_recipes = all_recipes
+                
             print(f"Loaded {len(self.sample_recipes)} recipes for analysis")
         except FileNotFoundError:
             self.sample_recipes = []
@@ -1814,24 +1846,20 @@ def text_mining_page(app):
     full_text = sample_recipe.get('title', '') + " " + " ".join(sample_recipe.get('ingredients', []))
     tokens = app.preprocessor.tokenize_turkish(full_text)
     
-    # Create a word cloud of tokens
-    try:
-        from wordcloud import WordCloud
-        import matplotlib.pyplot as plt
+    # Show tokens as a simple list instead of word cloud
+    if tokens:
+        st.write("**Top Tokens:**")
+        from collections import Counter
+        token_counts = Counter(tokens)
+        top_tokens = token_counts.most_common(20)
         
-        if tokens:
-            # Generate word cloud
-            wordcloud = WordCloud(width=800, height=400, background_color='white').generate(" ".join(tokens))
-            
-            # Display word cloud
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.imshow(wordcloud, interpolation='bilinear')
-            ax.axis('off')
-            st.pyplot(fig)
-        else:
-            st.warning("No tokens found after preprocessing")
-    except Exception as e:
-        st.warning(f"Word cloud generation failed: {e}")
+        # Display as columns
+        cols = st.columns(4)
+        for i, (token, count) in enumerate(top_tokens):
+            with cols[i % 4]:
+                st.write(f"• {token} ({count})")
+    else:
+        st.warning("No tokens found after preprocessing")
     
     # Show token statistics
     col1, col2, col3 = st.columns(3)
@@ -1989,105 +2017,47 @@ def text_mining_page(app):
     # Embeddings
     st.markdown("#### 🧠 Word Embeddings & Semantic Analysis")
     
-    try:
-        # Simple word embeddings using sentence transformers
-        from sentence_transformers import SentenceTransformer
-        
-        with st.spinner("Loading embedding model..."):
-            # Use a multilingual model that works with Turkish
-            model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-        
-        # Create embeddings for recipe components
-        recipe_components = [
-            sample_recipe.get('title', ''),
-            ' '.join(sample_recipe.get('ingredients', [])[:5])  # First 5 ingredients
-        ]
-        
-        embeddings = model.encode(recipe_components)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("**Embedding Dimensions:**")
-            st.write(f"Title embedding shape: {embeddings[0].shape}")
-            st.write(f"Ingredients embedding shape: {embeddings[1].shape}")
-            
-            # Show similarity between title and ingredients
-            from sklearn.metrics.pairwise import cosine_similarity
-            similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
-            st.metric("Title-Ingredients Similarity", f"{similarity:.3f}")
-        
-        with col2:
-            st.write("**Embedding Visualization (First 10 dimensions):**")
-            embed_df = pd.DataFrame({
-                'Dimension': range(10),
-                'Title': embeddings[0][:10],
-                'Ingredients': embeddings[1][:10]
-            })
-            
-            fig = px.line(embed_df, x='Dimension', y=['Title', 'Ingredients'], 
-                         title="Embedding Values (First 10 Dimensions)")
-            st.plotly_chart(fig, use_container_width=True)
+    st.info("📝 **Word Embeddings Demonstration** (Conceptual)")
     
-    except Exception as e:
-        st.warning(f"Embeddings analysis failed: {e}")
-        st.info("Embeddings require additional models. For demonstration, showing conceptual explanation.")
-        
-        st.write("""
-        **Word Embeddings** convert text into dense numerical vectors that capture semantic meaning:
-        - Each word/phrase becomes a vector of real numbers
-        - Similar words have similar vectors
-        - Enables semantic similarity calculations
-        - Used in our deep learning models for better understanding
-        """)
+    st.write("""
+    **Word Embeddings** convert text into dense numerical vectors that capture semantic meaning:
+    - Each word/phrase becomes a vector of real numbers
+    - Similar words have similar vectors
+    - Enables semantic similarity calculations
+    - Used in our deep learning models for better understanding
+    """)
+    
+    # Show a simple conceptual example
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Example Embedding Concepts:**")
+        st.write("• 'domates' → [0.2, -0.1, 0.8, ...]")
+        st.write("• 'salata' → [0.3, -0.2, 0.7, ...]")
+        st.write("• 'kızartma' → [-0.1, 0.5, -0.3, ...]")
+    
+    with col2:
+        st.write("**Semantic Relationships:**")
+        st.write("• Vegetables cluster together")
+        st.write("• Cooking methods form groups")
+        st.write("• Similar ingredients have similar vectors")
     
     # NLTK Analysis
     st.markdown("### 5. NLTK Analysis")
     
-    # Download required NLTK data if not already downloaded
-    import nltk
+    st.info("📝 **NLTK Analysis** (Simplified for deployment)")
     
-    # Download NLTK data with better error handling
-    nltk_downloads = ['punkt', 'punkt_tab']
-    for resource in nltk_downloads:
-        try:
-            nltk.data.find(f'tokenizers/{resource}')
-        except LookupError:
-            try:
-                with st.spinner(f'Downloading NLTK {resource}...'):
-                    nltk.download(resource, quiet=True)
-            except Exception as e:
-                st.warning(f"Could not download NLTK {resource}: {e}")
-    
-    # Tokenize and analyze with comprehensive error handling
+    # Tokenize and analyze with simple fallback approach
     text = sample_recipe.get('title', '') + " " + " ".join(sample_recipe.get('ingredients', []))
     
-    # Try sentence tokenization with multiple fallbacks
-    sentences = []
-    try:
-        sentences = nltk.sent_tokenize(text, language='english')
-    except Exception as e:
-        try:
-            # Try without language specification
-            sentences = nltk.sent_tokenize(text)
-        except Exception as e2:
-            # Final fallback: split by periods and exclamation marks
-            sentences = [s.strip() for s in text.replace('!', '.').split('.') if s.strip()]
-            if not sentences:
-                sentences = [text]  # Use full text as single sentence
+    # Simple sentence tokenization (fallback approach)
+    sentences = [s.strip() for s in text.replace('!', '.').replace('?', '.').split('.') if s.strip()]
+    if not sentences:
+        sentences = [text]
     
-    # Word tokenization with multiple fallbacks
-    words = []
-    try:
-        words = nltk.word_tokenize(text)
-    except Exception as e:
-        try:
-            # Try simple word tokenization
-            words = nltk.word_tokenize(text, language='english')
-        except Exception as e2:
-            # Final fallback: simple split
-            words = text.split()
-            if not words:
-                words = [text]  # Use full text as single word
+    # Simple word tokenization (fallback approach)
+    words = text.split()
+    if not words:
+        words = [text]
     
     col1, col2 = st.columns(2)
     
@@ -2100,14 +2070,10 @@ def text_mining_page(app):
         st.markdown("#### Word Analysis")
         st.write(f"Number of words: {len(words)}")
         st.write("Word frequency distribution:")
-        try:
-            freq_dist = nltk.FreqDist(words)
-            st.write(dict(freq_dist.most_common(5)))
-        except Exception as e:
-            # Fallback: manual frequency count
-            from collections import Counter
-            word_counts = Counter(words)
-            st.write(dict(word_counts.most_common(5)))
+        # Simple frequency count without NLTK
+        from collections import Counter
+        word_counts = Counter(words)
+        st.write(dict(word_counts.most_common(5)))
     
     # Turkish-specific Analysis
     st.markdown("### 6. Turkish-specific Analysis")

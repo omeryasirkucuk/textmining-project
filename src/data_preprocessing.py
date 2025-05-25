@@ -4,11 +4,28 @@ import numpy as np
 import re
 import string
 from typing import List, Dict, Any, Tuple
-import nltk
 from collections import Counter
 
 # Turkish text preprocessing
 import regex as re_turkish
+
+# Optional NLTK import
+try:
+    import nltk
+    NLTK_AVAILABLE = True
+except ImportError:
+    NLTK_AVAILABLE = False
+    # Create dummy nltk module
+    class DummyNLTK:
+        def word_tokenize(self, text):
+            return text.split()
+        def download(self, *args, **kwargs):
+            pass
+        class data:
+            @staticmethod
+            def find(*args):
+                raise LookupError("NLTK not available")
+    nltk = DummyNLTK()
 
 class TurkishTextPreprocessor:
     """
@@ -22,15 +39,32 @@ class TurkishTextPreprocessor:
         
     def setup_nltk(self):
         """Download required NLTK data"""
+        if not NLTK_AVAILABLE:
+            return
+            
         try:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
-            nltk.download('punkt')
+            try:
+                nltk.download('punkt', quiet=True)
+            except:
+                pass
+        
+        try:
+            nltk.data.find('tokenizers/punkt_tab')
+        except LookupError:
+            try:
+                nltk.download('punkt_tab', quiet=True)
+            except:
+                pass
             
         try:
             nltk.data.find('corpora/stopwords')
         except LookupError:
-            nltk.download('stopwords')
+            try:
+                nltk.download('stopwords', quiet=True)
+            except:
+                pass
     
     def setup_turkish_stopwords(self):
         """Turkish stopwords for recipe text"""
