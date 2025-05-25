@@ -13,6 +13,7 @@ import re
 # Simple NLTK setup with error handling
 try:
     import nltk
+    NLTK_AVAILABLE = True
     # Try to download required data quietly
     try:
         nltk.data.find('corpora/stopwords')
@@ -22,7 +23,18 @@ try:
         except:
             pass  # Continue without NLTK if download fails
 except ImportError:
-    pass  # Continue without NLTK if not available
+    NLTK_AVAILABLE = False
+    # Create dummy nltk module
+    class DummyNLTK:
+        def word_tokenize(self, text):
+            return text.split()
+        def download(self, *args, **kwargs):
+            pass
+        class data:
+            @staticmethod
+            def find(*args):
+                raise LookupError("NLTK not available")
+    nltk = DummyNLTK()
 
 # Import our custom modules
 import sys
