@@ -157,11 +157,11 @@ class RecipeClassifierApp:
                 traceback.print_exc()
     
     def load_sample_data(self):
-        """Load all recipes for analysis"""
+        """Load sample recipes for analysis (optimized for cloud deployment)"""
         try:
             # Try to use Streamlit spinner if available
             try:
-                with st.spinner('Loading full dataset...'):
+                with st.spinner('Loading dataset...'):
                     with open('data/detailed_recipe_categorie_unitsize_calorie_chef.json', 'r', encoding='utf-8') as f:
                         all_recipes = json.load(f)
             except:
@@ -169,8 +169,14 @@ class RecipeClassifierApp:
                 with open('data/detailed_recipe_categorie_unitsize_calorie_chef.json', 'r', encoding='utf-8') as f:
                     all_recipes = json.load(f)
             
-            # Load all recipes
-            self.sample_recipes = all_recipes
+            # Sample recipes for better performance on cloud deployment
+            import random
+            if len(all_recipes) > 1000:
+                random.seed(42)  # For reproducibility
+                self.sample_recipes = random.sample(all_recipes, 1000)
+            else:
+                self.sample_recipes = all_recipes
+                
             print(f"Loaded {len(self.sample_recipes)} recipes for analysis")
         except FileNotFoundError:
             self.sample_recipes = []
@@ -1994,8 +2000,8 @@ def text_mining_page(app):
         from sentence_transformers import SentenceTransformer
         
         with st.spinner("Loading embedding model..."):
-            # Use a multilingual model that works with Turkish
-            model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            # Use a smaller multilingual model for better performance
+            model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2', device='cpu')
         
         # Create embeddings for recipe components
         recipe_components = [
@@ -2047,16 +2053,20 @@ def text_mining_page(app):
     import nltk
     
     # Download NLTK data with better error handling
-    nltk_downloads = ['punkt', 'punkt_tab']
+    nltk_downloads = ['punkt', 'punkt_tab', 'stopwords']
     for resource in nltk_downloads:
         try:
-            nltk.data.find(f'tokenizers/{resource}')
+            if resource == 'stopwords':
+                nltk.data.find(f'corpora/{resource}')
+            else:
+                nltk.data.find(f'tokenizers/{resource}')
         except LookupError:
             try:
                 with st.spinner(f'Downloading NLTK {resource}...'):
                     nltk.download(resource, quiet=True)
             except Exception as e:
                 st.warning(f"Could not download NLTK {resource}: {e}")
+                continue
     
     # Tokenize and analyze with comprehensive error handling
     text = sample_recipe.get('title', '') + " " + " ".join(sample_recipe.get('ingredients', []))
