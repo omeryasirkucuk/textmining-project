@@ -23,6 +23,17 @@ try:
     DEEP_LEARNING_AVAILABLE = True
 except ImportError:
     DEEP_LEARNING_AVAILABLE = False
+    # Create dummy torch module to prevent errors
+    class DummyTorch:
+        def device(self, *args, **kwargs):
+            return "cpu"
+        def no_grad(self):
+            return self
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+    torch = DummyTorch() if not DEEP_LEARNING_AVAILABLE else torch
 
 import warnings
 warnings.filterwarnings('ignore')
