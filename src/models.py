@@ -15,8 +15,15 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 import matplotlib.pyplot as plt
 import seaborn as sns
-from transformers import AutoTokenizer, AutoModel, pipeline
-import torch
+
+# Optional imports for deep learning (only if available)
+try:
+    from transformers import AutoTokenizer, AutoModel, pipeline
+    import torch
+    DEEP_LEARNING_AVAILABLE = True
+except ImportError:
+    DEEP_LEARNING_AVAILABLE = False
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -303,10 +310,17 @@ class TraditionalModels:
 
 class DeepLearningModels:
     """
-    Deep learning models using transformers
+    Deep learning models using transformers (optional)
     """
     
     def __init__(self):
+        if not DEEP_LEARNING_AVAILABLE:
+            print("Warning: PyTorch/Transformers not available. Deep learning features disabled.")
+            self.tokenizer = None
+            self.model = None
+            self.device = None
+            return
+            
         self.tokenizer = None
         self.model = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -314,6 +328,10 @@ class DeepLearningModels:
     def load_turkish_bert(self, model_name='dbmdz/bert-base-turkish-cased'):
         """Load Turkish BERT model"""
         
+        if not DEEP_LEARNING_AVAILABLE:
+            print("Error: PyTorch/Transformers not available. Cannot load BERT model.")
+            return
+            
         print(f"Loading {model_name}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
@@ -321,6 +339,10 @@ class DeepLearningModels:
         
     def create_embeddings(self, texts: List[str], max_length=256) -> np.ndarray:
         """Create BERT embeddings for texts"""
+        
+        if not DEEP_LEARNING_AVAILABLE:
+            print("Error: PyTorch/Transformers not available. Cannot create embeddings.")
+            return np.array([])
         
         if self.tokenizer is None or self.model is None:
             self.load_turkish_bert()
@@ -353,6 +375,10 @@ class DeepLearningModels:
     
     def create_recipe_embeddings(self, df: pd.DataFrame) -> np.ndarray:
         """Create embeddings for entire recipes"""
+        
+        if not DEEP_LEARNING_AVAILABLE:
+            print("Error: PyTorch/Transformers not available. Cannot create recipe embeddings.")
+            return np.array([])
         
         # Combine title and ingredients
         recipe_texts = []
@@ -470,7 +496,7 @@ class RecipeClassificationPipeline:
     def __init__(self):
         self.feature_engineer = FeatureEngineering()
         self.traditional_models = TraditionalModels()
-        self.dl_models = DeepLearningModels()
+        self.dl_models = DeepLearningModels() if DEEP_LEARNING_AVAILABLE else None
         self.evaluator = ModelEvaluator()
         self.best_model = None
         self.best_score = 0
@@ -530,10 +556,18 @@ class RecipeClassificationPipeline:
     def train_deep_models(self, df: pd.DataFrame, y_train, y_val, y_test):
         """Train deep learning models"""
         
+        if not DEEP_LEARNING_AVAILABLE or self.dl_models is None:
+            print("Deep learning models not available. Skipping...")
+            return {}, None
+        
         print("\n=== Training Deep Learning Models ===")
         
         # Create embeddings
         embeddings = self.dl_models.create_recipe_embeddings(df)
+        
+        if embeddings.size == 0:
+            print("Failed to create embeddings. Skipping deep learning models.")
+            return {}, None
         
         # Split embeddings according to data splits
         # Note: This is simplified - in practice, you'd need to track indices
