@@ -1066,7 +1066,6 @@ def model_performance_page(app):
     try:
         import os
         if os.path.exists('data/processed/labeled_recipes.pkl'):
-            import pandas as pd
             labeled_df = pd.read_pickle('data/processed/labeled_recipes.pkl')
             high_conf_df = labeled_df[labeled_df['label_confidence'] > 0.7]
             
