@@ -384,8 +384,8 @@ def main():
     with st.sidebar:
         selected = option_menu(
             menu_title="Navigation",
-            options=["Home", "Data Collection Journey", "Text Mining Steps", "Dataset Explorer", "Model Performance", "Recipe Classifier", "About"],
-            icons=["house", "globe", "text-paragraph", "database", "graph-up", "search", "info-circle"],
+            options=["Home", "Data Collection Journey", "Text Mining Steps", "Dataset Explorer", "Model Performance", "Recipe Classifier", "Recipe Recommendations", "About"],
+            icons=["house", "globe", "text-paragraph", "database", "graph-up", "search", "heart", "info-circle"],
             menu_icon="list",
             default_index=0,
         )
@@ -406,6 +406,8 @@ def main():
         model_performance_page(app)
     elif selected == "Recipe Classifier":
         recipe_classifier_page(app)
+    elif selected == "Recipe Recommendations":
+        recipe_recommendations_page(app)
     elif selected == "About":
         about_page()
 
@@ -2151,6 +2153,390 @@ def text_mining_page(app):
     
     These techniques enable our machine learning models to understand and classify Turkish recipes effectively!
     """)
+
+def recipe_recommendations_page(app):
+    """Recipe recommendation system based on ingredients and health preferences"""
+    
+    st.header("💝 Recipe Recommendation System")
+    
+    st.markdown("""
+    Find the perfect Turkish recipes based on your preferred ingredients and health goals! 
+    Our AI-powered system will recommend recipes that match your criteria.
+    """)
+    
+    if not app.sample_recipes:
+        st.error("Dataset not available for recommendations.")
+        return
+    
+    # Recommendation Interface
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("🔍 Your Preferences")
+        
+        # Health Category Selection
+        st.markdown("#### Health Category Preference")
+        health_categories = ["Any", "Healthy", "Moderately Healthy", "FastFood"]
+        selected_health = st.selectbox(
+            "Choose your preferred health category:",
+            health_categories,
+            help="Select the health level you prefer for recommended recipes"
+        )
+        
+        # Ingredient Selection
+        st.markdown("#### Ingredient Preferences")
+        
+        # Get all unique ingredients from the dataset
+        all_ingredients = set()
+        for recipe in app.sample_recipes:
+            for ingredient in recipe.get('ingredients', []):
+                # Clean and normalize ingredient names
+                clean_ingredient = app.preprocessor.normalize_turkish_text(ingredient)
+                # Extract main ingredient word (remove quantities)
+                words = clean_ingredient.split()
+                for word in words:
+                    if len(word) > 3 and not any(char.isdigit() for char in word):
+                        all_ingredients.add(word)
+        
+        # Filter out common stopwords and cooking terms
+        cooking_terms = {'adet', 'gram', 'kaşık', 'bardak', 'küçük', 'büyük', 'orta', 'ince', 'kalın'}
+        filtered_ingredients = sorted([ing for ing in all_ingredients 
+                                     if ing not in app.preprocessor.turkish_stopwords 
+                                     and ing not in cooking_terms
+                                     and len(ing) > 2])[:200]  # Limit to top 200 for performance
+        
+        # Ingredient selection methods
+        ingredient_method = st.radio(
+            "How would you like to select ingredients?",
+            ["Choose from common ingredients", "Search for specific ingredients", "Type custom ingredients"],
+            horizontal=True
+        )
+        
+        selected_ingredients = []
+        
+        if ingredient_method == "Choose from common ingredients":
+            # Show most common ingredients
+            ingredient_counts = {}
+            for recipe in app.sample_recipes:
+                for ingredient in recipe.get('ingredients', []):
+                    clean_ingredient = app.preprocessor.normalize_turkish_text(ingredient)
+                    words = clean_ingredient.split()
+                    for word in words:
+                        if word in filtered_ingredients:
+                            ingredient_counts[word] = ingredient_counts.get(word, 0) + 1
+            
+            common_ingredients = sorted(ingredient_counts.items(), key=lambda x: x[1], reverse=True)[:50]
+            
+            st.write("**Select from common ingredients:**")
+            selected_ingredients = st.multiselect(
+                "Choose ingredients you like:",
+                [ing for ing, count in common_ingredients],
+                help="Select multiple ingredients that you want in your recommended recipes"
+            )
+            
+        elif ingredient_method == "Search for specific ingredients":
+            search_term = st.text_input("🔍 Search for ingredients:", placeholder="Type to search...")
+            
+            if search_term:
+                search_results = [ing for ing in filtered_ingredients 
+                                if search_term.lower() in ing.lower()][:20]
+                
+                if search_results:
+                    selected_ingredients = st.multiselect(
+                        f"Found {len(search_results)} matching ingredients:",
+                        search_results
+                    )
+                else:
+                    st.info("No ingredients found. Try a different search term.")
+            
+        else:  # Type custom ingredients
+            custom_ingredients = st.text_area(
+                "Type ingredients (one per line):",
+                placeholder="domates\nsalatalık\nzeytinyağı",
+                help="Enter ingredient names in Turkish, one per line"
+            )
+            
+            if custom_ingredients:
+                selected_ingredients = [ing.strip().lower() for ing in custom_ingredients.split('\n') if ing.strip()]
+        
+        # Additional filters
+        st.markdown("#### Additional Filters")
+        
+        col_cal, col_time = st.columns(2)
+        with col_cal:
+            max_calories = st.slider("Maximum calories per serving", 0, 1000, 500, step=50)
+        
+        with col_time:
+            max_time = st.slider("Maximum total time (minutes)", 0, 300, 120, step=15)
+        
+        # Category filter
+        categories = ["Any"] + sorted(list(set(recipe.get('main_cat', '') for recipe in app.sample_recipes)))
+        selected_category = st.selectbox("Recipe category:", categories[:20])  # Limit for performance
+        
+        # Number of recommendations
+        num_recommendations = st.slider("Number of recommendations", 1, 20, 5)
+        
+        # Generate recommendations button
+        if st.button("🎯 Get Recommendations", type="primary"):
+            if selected_ingredients or selected_health != "Any":
+                recommendations = generate_recommendations(
+                    app, selected_ingredients, selected_health, max_calories, 
+                    max_time, selected_category, num_recommendations
+                )
+                display_recommendations(app, recommendations, selected_ingredients, selected_health)
+            else:
+                st.warning("Please select at least one ingredient or health category to get recommendations.")
+    
+    with col2:
+        # Recommendation Tips
+        st.subheader("💡 Recommendation Tips")
+        
+        st.markdown("""
+        <div style="background: #e8f5e8; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;">
+            <h4 style="color: #388e3c; margin-bottom: 0.5rem;">🌟 Getting Better Results</h4>
+            <ul style="margin: 0; color: #555;">
+                <li>Select 2-3 key ingredients you enjoy</li>
+                <li>Choose your preferred health category</li>
+                <li>Adjust calorie and time limits based on your needs</li>
+                <li>Try different ingredient combinations</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style="background: #fff3e0; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;">
+            <h4 style="color: #f57c00; margin-bottom: 0.5rem;">🔍 Search Tips</h4>
+            <ul style="margin: 0; color: #555;">
+                <li>Use Turkish ingredient names</li>
+                <li>Try both specific (domates) and general (sebze) terms</li>
+                <li>Search for cooking methods (fırın, ızgara)</li>
+                <li>Look for seasonal ingredients</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style="background: #e3f2fd; padding: 1rem; border-radius: 10px;">
+            <h4 style="color: #1976d2; margin-bottom: 0.5rem;">🎯 Categories Explained</h4>
+            <ul style="margin: 0; color: #555;">
+                <li><strong>Healthy:</strong> ≤200 cal, lots of vegetables</li>
+                <li><strong>Moderately Healthy:</strong> 200-400 cal, balanced</li>
+                <li><strong>FastFood:</strong> >400 cal, indulgent</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def generate_recommendations(app, selected_ingredients, health_category, max_calories, max_time, category_filter, num_recommendations):
+    """Generate recipe recommendations based on user preferences"""
+    
+    recommendations = []
+    
+    for recipe in app.sample_recipes:
+        score = 0
+        
+        # Extract recipe features for health classification if needed
+        if health_category != "Any":
+            try:
+                classification_result = app.classify_recipe(recipe)
+                recipe_health = classification_result['ensemble']
+                
+                # Match health category
+                if health_category == recipe_health:
+                    score += 10  # High score for exact health match
+                elif health_category == "Moderately Healthy" and recipe_health in ["Healthy", "FastFood"]:
+                    score += 5   # Moderate score for close health match
+            except:
+                # If classification fails, give neutral score
+                score += 2
+        
+        # Check ingredient preferences
+        recipe_ingredients_text = ' '.join(recipe.get('ingredients', [])).lower()
+        recipe_ingredients_text = app.preprocessor.normalize_turkish_text(recipe_ingredients_text)
+        
+        ingredient_matches = 0
+        for ingredient in selected_ingredients:
+            if ingredient.lower() in recipe_ingredients_text:
+                ingredient_matches += 1
+                score += 5  # Points for each matching ingredient
+        
+        # Bonus for multiple ingredient matches
+        if len(selected_ingredients) > 0:
+            ingredient_ratio = ingredient_matches / len(selected_ingredients)
+            score += ingredient_ratio * 10
+        
+        # Check calorie constraint
+        try:
+            recipe_calories = app.extract_calories(recipe.get('calorie', '0'))
+            if recipe_calories == 0:
+                # Apply category-based default
+                category = recipe.get('main_cat', '').lower()
+                if 'tatli' in category or 'kek' in category:
+                    recipe_calories = 350
+                elif 'salata' in category or 'meze' in category:
+                    recipe_calories = 150
+                elif 'çorba' in category:
+                    recipe_calories = 200
+                else:
+                    recipe_calories = 250
+            
+            if recipe_calories <= max_calories:
+                score += 3
+            else:
+                score -= 5  # Penalty for exceeding calorie limit
+        except:
+            pass
+        
+        # Check time constraint
+        try:
+            prep_time = app.extract_time(recipe.get('preparing_time', '0'))
+            cook_time = app.extract_time(recipe.get('cooking_time', '0'))
+            total_time = prep_time + cook_time
+            
+            if total_time <= max_time:
+                score += 2
+            elif total_time > max_time * 1.5:
+                score -= 3  # Penalty for significantly exceeding time limit
+        except:
+            pass
+        
+        # Check category filter
+        if category_filter != "Any":
+            if recipe.get('main_cat', '') == category_filter:
+                score += 5
+        
+        # Add some randomness for variety
+        import random
+        score += random.uniform(0, 2)
+        
+        # Only include recipes with positive scores
+        if score > 0:
+            recommendations.append({
+                'recipe': recipe,
+                'score': score,
+                'ingredient_matches': ingredient_matches
+            })
+    
+    # Sort by score and return top recommendations
+    recommendations.sort(key=lambda x: x['score'], reverse=True)
+    return recommendations[:num_recommendations]
+
+
+def display_recommendations(app, recommendations, selected_ingredients, selected_health):
+    """Display the recommended recipes"""
+    
+    if not recommendations:
+        st.warning("No recipes found matching your criteria. Try adjusting your preferences.")
+        return
+    
+    st.markdown("---")
+    st.subheader(f"🎯 Top {len(recommendations)} Recommendations for You")
+    
+    # Summary of search criteria
+    st.markdown("**Your Search Criteria:**")
+    criteria_text = []
+    if selected_ingredients:
+        criteria_text.append(f"Ingredients: {', '.join(selected_ingredients)}")
+    if selected_health != "Any":
+        criteria_text.append(f"Health Category: {selected_health}")
+    
+    st.info(" | ".join(criteria_text) if criteria_text else "Open search")
+    
+    # Display recommendations
+    for i, rec in enumerate(recommendations, 1):
+        recipe = rec['recipe']
+        score = rec['score']
+        matches = rec['ingredient_matches']
+        
+        with st.expander(f"#{i}: {recipe.get('title', 'Unknown Recipe')} (Score: {score:.1f})", expanded=i==1):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Recipe details
+                st.write(f"**Category:** {recipe.get('main_cat', 'N/A')}")
+                
+                # Show calories
+                calories = app.extract_calories(recipe.get('calorie', '0'))
+                if calories == 0:
+                    category = recipe.get('main_cat', '').lower()
+                    if 'tatli' in category:
+                        calories = 350
+                    elif 'salata' in category:
+                        calories = 150
+                    elif 'çorba' in category:
+                        calories = 200
+                    else:
+                        calories = 250
+                
+                st.write(f"**Calories:** {calories:.0f} per serving")
+                st.write(f"**Serving Size:** {recipe.get('size', 'N/A')}")
+                
+                # Times
+                prep_time = app.extract_time(recipe.get('preparing_time', '0'))
+                cook_time = app.extract_time(recipe.get('cooking_time', '0'))
+                if prep_time > 0 or cook_time > 0:
+                    st.write(f"**Time:** {prep_time + cook_time:.0f} min total ({prep_time:.0f} prep + {cook_time:.0f} cook)")
+                
+                # Matching ingredients
+                if selected_ingredients and matches > 0:
+                    st.write(f"**Matching Ingredients:** {matches}/{len(selected_ingredients)} ingredients match your preferences")
+                
+                # Show first few ingredients
+                ingredients = recipe.get('ingredients', [])
+                st.write("**Ingredients:**")
+                for ing in ingredients[:5]:
+                    # Highlight matching ingredients
+                    is_match = any(sel_ing.lower() in ing.lower() for sel_ing in selected_ingredients)
+                    if is_match:
+                        st.markdown(f"• **{ing}** ✨")
+                    else:
+                        st.write(f"• {ing}")
+                
+                if len(ingredients) > 5:
+                    st.write(f"... and {len(ingredients) - 5} more ingredients")
+            
+            with col2:
+                # Health classification
+                try:
+                    classification = app.classify_recipe(recipe)
+                    health_label = classification['ensemble']
+                    confidence = classification['confidence']
+                    
+                    # Color coding
+                    colors = {
+                        'Healthy': '#28a745',
+                        'Moderately Healthy': '#ffc107', 
+                        'FastFood': '#dc3545'
+                    }
+                    
+                    color = colors.get(health_label, '#6c757d')
+                    
+                    st.markdown(f"""
+                    <div style="text-align: center; padding: 1rem; background: {color}; 
+                                border-radius: 10px; color: white; margin-bottom: 1rem;">
+                        <h4 style="color: white; margin: 0;">{health_label}</h4>
+                        <p style="margin: 0; opacity: 0.9;">Confidence: {confidence:.1%}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                except Exception as e:
+                    st.error(f"Classification error: {e}")
+                
+                # Quick action button
+                if st.button(f"📋 Full Analysis", key=f"analyze_{i}"):
+                    st.info("Click 'Recipe Classifier' in the menu and search for this recipe to see full analysis!")
+    
+    # Additional recommendations section
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Get More Recommendations", type="secondary"):
+            st.experimental_rerun()
+    
+    with col2:
+        if st.button("⚙️ Adjust Preferences", type="secondary"):
+            st.info("Modify your preferences above and click 'Get Recommendations' again!")
 
 if __name__ == "__main__":
     main() 
